@@ -145,7 +145,7 @@
     <div class="row"><label>Kalibrieren<br><span class="sub">Tasten & Punkte ziehen/zoomen</span></label><div class="toggle" id="tCalib"><div class="knob"></div></div></div>
     <div class="row"><label>Rütteln bei voller Eingabe</label><div class="toggle on" id="tShake"><div class="knob"></div></div></div>
     <div class="row"><label>Tipp-Sound</label><div class="toggle on" id="tSound"><div class="knob"></div></div></div>
-    <div class="row"><label>Klick-Sound (Datei)<br><span class="sub">mp3 / m4a / wav</span></label><input type="file" id="sndFile" accept="audio/*"></div>
+    <div class="row"><label>Klick-Sound (Datei)<br><span class="sub">mp3 / m4a / wav</span></label><input type="file" id="sndFile"></div>
     <div class="row"><label>Vibration<br><span class="sub">nur Android; iPhone vibriert nicht</span></label><div class="toggle on" id="tHaptic"><div class="knob"></div></div></div>
     <div class="row"><label>Bildschirm anlassen<br><span class="sub">kein Ruhemodus in der App</span></label><div class="toggle on" id="tAwake"><div class="knob"></div></div></div>
     <div class="row"><label>Sperre nach Fehlversuchen</label><div class="toggle on" id="tLock"><div class="knob"></div></div></div>
@@ -153,7 +153,8 @@
     <div class="row"><label>Sperr-Screenshot<br><span class="sub">„iPhone nicht verfügbar"</span></label><input type="file" id="lockFile" accept="image/*"></div>
 
     <div class="row"><label>Home-Screenshot<br><span class="sub">erscheint beim Entsperren</span></label><input type="file" id="homeFile" accept="image/*"></div>
-    <div class="row"><label>Entsperr-Sound (Datei)<br><span class="sub">optional</span></label><input type="file" id="unlockSndFile" accept="audio/*"></div>
+    <div class="row"><label>Fake-Home zeigen<br><span class="sub">aus = nur Animation, du wischst selbst raus</span></label><div class="toggle on" id="tFakeHome"><div class="knob"></div></div></div>
+    <div class="row"><label>Entsperr-Sound (Datei)<br><span class="sub">optional</span></label><input type="file" id="unlockSndFile"></div>
     <div class="row"><label>Fester Entsperr-Code<br><span class="sub">leer = nur per 2-Finger-Tipp</span></label><input class="num" id="unlockCode" inputmode="numeric" style="width:90px" placeholder="—"></div>
     <div class="row"><label>Arm-Anzeige<br><span class="sub">winziger Punkt unten links</span></label><div class="toggle on" id="tArmInd"><div class="knob"></div></div></div>
     <div class="row"><label>Zurück sperren</label><button class="btn" id="relockBtn">Sperrbildschirm</button></div>
@@ -171,7 +172,7 @@
   "use strict";
   const $=s=>document.querySelector(s);
 
-  const cfg={ len:4, sound:true, haptic:true, calib:false, shake:true, lockEnabled:true, lockAfter:5, lockSeconds:60, keepAwake:true, unlockCode:"", armIndicator:true };
+  const cfg={ len:4, sound:true, haptic:true, calib:false, shake:true, lockEnabled:true, lockAfter:5, lockSeconds:60, keepAwake:true, unlockCode:"", armIndicator:true, showFakeHome:true };
   const state={ entered:"", captures:[], committed:false, fails:0, locked:false, lockTimer:null, armed:false, unlocked:false };
 
   const app=$("#app"), bg=$("#bg"), placeholder=$("#placeholder");
@@ -239,9 +240,11 @@
   function loadSound(file, which){
     const r=new FileReader();
     r.onload=ev=>{ const dataURL=ev.target.result;
+      try{ const c=ctx(); if(c.state==="suspended") c.resume(); }catch(e){}
       decodeFromDataURL(dataURL).then(buf=>{
         if(which==="click"){ clickBuf=buf; clickSndData=dataURL; } else { unlockBuf=buf; unlockSndData=dataURL; }
         saveSetup();
+        alert(which==="click" ? "Klick-Sound geladen." : "Entsperr-Sound geladen.");
       }).catch(()=>{ alert("Diese Audiodatei konnte nicht gelesen werden. Versuche mp3, m4a oder wav."); });
     };
     r.readAsDataURL(file);
@@ -319,9 +322,11 @@
     state.unlocked=true; state.fails=0;
     playUnlock(); haptic(20);
     bg.classList.add("unlocking");
+    if(!cfg.showFakeHome) return;   // nur Animation -> Performer wischt selbst auf den echten Homescreen
     const ho=$("#home"), hasImg=!!homeData;
     ho.classList.toggle("hasimg", hasImg);
     ho.style.backgroundImage = hasImg ? "url("+homeData+")" : "none";
+    ho.style.backgroundSize="cover"; ho.style.backgroundPosition="center";
     setTimeout(()=> ho.classList.add("show"), 240);
   }
   function relock(){
@@ -335,7 +340,9 @@
     const lo=$("#lockout"), hasImg=!!lockData;
     lo.classList.toggle("hasimg", hasImg);
     lo.style.backgroundImage = hasImg ? "url("+lockData+")" : "none";
+    lo.style.backgroundSize="cover"; lo.style.backgroundPosition="center";
     lo.classList.add("show"); haptic(60);
+    requestWake();   // sicherstellen, dass der Bildschirm während der Sperre an bleibt
     clearInterval(loInterval);
     if(!hasImg){
       let rem=cfg.lockSeconds; updateCount(rem);
@@ -439,15 +446,19 @@
 
   // ---------- Setup speichern/laden (NUR Setup – niemals getippte Zahlen) ----------
   const LS_KEY="lockscreen_setup_v1";
+  let quotaWarned=false;
   function saveSetup(){
     try{
       localStorage.setItem(LS_KEY, JSON.stringify({
         len:cfg.len, sound:cfg.sound, haptic:cfg.haptic, shake:cfg.shake,
         lockEnabled:cfg.lockEnabled, lockAfter:cfg.lockAfter, lockSeconds:cfg.lockSeconds, keepAwake:cfg.keepAwake,
-        unlockCode:cfg.unlockCode, armIndicator:cfg.armIndicator,
+        unlockCode:cfg.unlockCode, armIndicator:cfg.armIndicator, showFakeHome:cfg.showFakeHome,
         tDots, tKeys, tDel, bg:bgData, lock:lockData, home:homeData, clickSnd:clickSndData, unlockSnd:unlockSndData
       }));
-    }catch(e){ /* z.B. Speicher voll – Sitzung läuft trotzdem weiter */ }
+    }catch(e){
+      if(!quotaWarned){ quotaWarned=true;
+        alert("Der lokale Speicher ist voll – das Setup konnte nicht vollständig gesichert werden. Verwende kleinere Bilder/Sounds oder entferne eines davon."); }
+    }
   }
   function applySetup(d){
     if(typeof d.len==="number") cfg.len=d.len;
@@ -460,6 +471,7 @@
     if(typeof d.keepAwake==="boolean") cfg.keepAwake=d.keepAwake;
     if(typeof d.unlockCode==="string") cfg.unlockCode=d.unlockCode;
     if(typeof d.armIndicator==="boolean") cfg.armIndicator=d.armIndicator;
+    if(typeof d.showFakeHome==="boolean") cfg.showFakeHome=d.showFakeHome;
     if(d.tDots) Object.assign(tDots,d.tDots);
     if(d.tKeys) Object.assign(tKeys,d.tKeys);
     if(d.tDel)  Object.assign(tDel,d.tDel);
@@ -480,6 +492,7 @@
     $("#lockAfter").value=cfg.lockAfter; $("#lockSeconds").value=cfg.lockSeconds;
     $("#unlockCode").value=cfg.unlockCode||"";
     $("#tArmInd").classList.toggle("on",cfg.armIndicator);
+    $("#tFakeHome").classList.toggle("on",cfg.showFakeHome);
     updateArmIndicator();
     $("#tCalib").classList.remove("on"); cfg.calib=false; app.classList.remove("calib");
   }
@@ -488,11 +501,11 @@
   function downscaleFile(file, cb){
     const r=new FileReader();
     r.onload=ev=>{ const img=new Image();
-      img.onload=()=>{ const max=1400, s=Math.min(1, max/Math.max(img.width,img.height));
+      img.onload=()=>{ const max=1100, s=Math.min(1, max/Math.max(img.width,img.height));
         const w=Math.round(img.width*s), h=Math.round(img.height*s);
         const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
         cv.getContext("2d").drawImage(img,0,0,w,h);
-        let url; try{ url=cv.toDataURL("image/jpeg",0.85); }catch(e){ url=ev.target.result; }
+        let url; try{ url=cv.toDataURL("image/jpeg",0.8); }catch(e){ url=ev.target.result; }
         cb(url);
       };
       img.src=ev.target.result;
@@ -515,6 +528,7 @@
   bindToggle("#tLock","lockEnabled");
   bindToggle("#tAwake","keepAwake", ()=>{ cfg.keepAwake ? requestWake() : releaseWake(); });
   bindToggle("#tArmInd","armIndicator", updateArmIndicator);
+  bindToggle("#tFakeHome","showFakeHome");
 
   $("#lockAfter").addEventListener("change",e=>{ const v=parseInt(e.target.value,10); cfg.lockAfter=Math.max(1,Math.min(99, isNaN(v)?5:v)); e.target.value=cfg.lockAfter; saveSetup(); });
   $("#lockSeconds").addEventListener("change",e=>{ const v=parseInt(e.target.value,10); cfg.lockSeconds=Math.max(5,Math.min(3600, isNaN(v)?60:v)); e.target.value=cfg.lockSeconds; saveSetup(); });
@@ -537,11 +551,17 @@
   // ---------- Bildschirm wachhalten (Wake Lock; iOS Safari 16.4+) ----------
   let wakeLock=null;
   async function requestWake(){ if(!cfg.keepAwake) return;
+    if(wakeLock) return;
     try{ if("wakeLock" in navigator && document.visibilityState==="visible"){
       wakeLock=await navigator.wakeLock.request("screen");
-      wakeLock.addEventListener("release",()=>{ wakeLock=null; }); } }catch(e){} }
-  async function releaseWake(){ try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; } }catch(e){} }
+      wakeLock.addEventListener("release",()=>{ wakeLock=null;
+        // System hat die Sperre gelöst (z.B. kurzer Wechsel) -> erneut anfordern
+        if(cfg.keepAwake && document.visibilityState==="visible") requestWake();
+      }); } }catch(e){} }
+  async function releaseWake(){ try{ if(wakeLock){ const w=wakeLock; wakeLock=null; await w.release(); } }catch(e){} }
   document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") requestWake(); });
+  // Auffrischen, falls die Sperre während einer langen Wartezeit (z.B. Sperr-Screen) wegfällt
+  setInterval(()=>{ if(cfg.keepAwake && !wakeLock && document.visibilityState==="visible") requestWake(); }, 12000);
 
   document.addEventListener("pointerdown",function w(){ try{ const c=ctx(); if(c.state==="suspended") c.resume(); }catch(e){} requestWake();
     if(clickSndData && !clickBuf) decodeFromDataURL(clickSndData).then(b=>clickBuf=b).catch(()=>{});
