@@ -25,7 +25,7 @@
 <style>
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; overflow:hidden; background:#000; }
-  body{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:#fff; user-select:none; -webkit-user-select:none; }
+  body{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:#fff; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
   #app{ position:fixed; inset:0; overflow:hidden; touch-action:none; }
 
   #bg{ position:absolute; inset:0; background-color:#000; background-size:cover; background-repeat:no-repeat; background-position:center; z-index:0; }
@@ -239,8 +239,12 @@
   // ---------- Globales Tippen / Reveal / Settings ----------
   const HOT=72, LONG=600;
   let downX=0,downY=0,longTimer=null,longFired=false,moved=false,inHot=false;
+  const activePointers=new Set();
   function clearTimers(){ clearTimeout(longTimer); }
   app.addEventListener("pointerdown",e=>{
+    activePointers.add(e.pointerId);
+    // 3 Finger = Menü öffnen (zuverlässig im Home-Bildschirm-Modus, auch beim Kalibrieren)
+    if(activePointers.size>=3){ clearTimers(); if(!$("#settings").classList.contains("show")) openSettings(); return; }
     if($("#settings").classList.contains("show")) return;
     downX=e.clientX; downY=e.clientY; moved=false; longFired=false;
     inHot=(downX<HOT && downY<HOT);
@@ -250,12 +254,14 @@
   });
   app.addEventListener("pointermove",e=>{ if(Math.hypot(e.clientX-downX,e.clientY-downY)>12){ moved=true; clearTimers(); } });
   app.addEventListener("pointerup",e=>{
+    activePointers.delete(e.pointerId);
     clearTimers();
-    if($("#settings").classList.contains("show")||cfg.calib||inHot||moved||longFired) return;
+    if($("#settings").classList.contains("show")||cfg.calib||inHot||moved||longFired||activePointers.size>0) return;
     const k=keyAt(downX,downY);
     if(k){ k.classList.add("press"); setTimeout(()=>k.classList.remove("press"),120);
       k.dataset.k==="del" ? del() : input(k.dataset.k); }
   });
+  app.addEventListener("pointercancel",e=>{ activePointers.delete(e.pointerId); });
 
   // ---------- Reveal ----------
   let revealTimer=null;
