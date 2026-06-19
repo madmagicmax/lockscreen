@@ -1,0 +1,310 @@
+<!--
+  Sperrbildschirm-Overlay v3 (Screenshot-Modus, direkt ziehen/zoomen)
+  -------------------------------------------------------------------
+  Dein Sperrbildschirm-Screenshot = Hintergrund.
+  Darüber: unsichtbare Tasten + animierte Code-Punkte (v1-Stil).
+
+  Bedienung im Einsatz:
+   - Tippen        -> Ziffer (über den unsichtbaren Tasten); Punkt füllt sich
+   - voll          -> Folge wird gemerkt, Bildschirm "rüttelt" & leert sich
+   - LANG drücken  -> zeigt alle getippten Folgen (nicht in der oberen linken Ecke)
+   - obere linke Ecke ~1,2 s halten -> Einstellungen
+
+  Kalibrieren (im Einstellungs-Menü einschalten, Menü schließen):
+   - Tasten-Block und Punkte-Reihe werden sichtbar umrahmt
+   - 1 Finger ziehen = verschieben | 2 Finger = zoomen
+   - top-links lange halten -> Einstellungen wieder öffnen -> Kalibrieren aus
+
+  Datenschutz: Eingaben nur im Arbeitsspeicher. Kein localStorage, keine Datei,
+  kein Netzwerk. Neuladen = alles weg. Nur für einvernehmliche Vorführungen;
+  Zuschauer bitten, keine echte/wiederverwendete PIN zu tippen.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; overflow:hidden; background:#000; }
+  body{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:#fff; user-select:none; -webkit-user-select:none; }
+  #app{ position:fixed; inset:0; overflow:hidden; touch-action:none; }
+
+  #bg{ position:absolute; inset:0; background-color:#000; background-size:cover; background-repeat:no-repeat; background-position:center; z-index:0; }
+  #placeholder{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:30px; z-index:1; color:#888; font-size:15px; line-height:1.5; }
+
+  #stage{ position:absolute; inset:0; z-index:2; }
+
+  /* Verschieb-/zoombare Gruppen */
+  .group{ position:absolute; transform-origin:center center; }
+  .frame{ position:relative; pointer-events:none; }
+  .calib .frame{ pointer-events:auto; outline:1.5px dashed rgba(10,132,255,.9); outline-offset:6px; }
+  .calib .frame::before{ content:attr(data-label); position:absolute; left:0; top:-26px; font-size:11px; color:#0a84ff; letter-spacing:.5px; }
+
+  /* Punkte im v1-Stil: umrandet, füllen sich, Pop */
+  #dotsFrame{ display:flex; gap:26px; align-items:center; }
+  .dot{ width:14px; height:14px; border-radius:50%; border:1.5px solid #fff; background:transparent;
+        transition:background .12s, transform .12s; box-shadow:0 0 3px rgba(0,0,0,.35); }
+  .dot.filled{ background:#fff; }
+  .dot.pop{ transform:scale(1.5); }
+  #dotsFrame.shake{ animation:shake .45s; }
+  @keyframes shake{ 0%,100%{transform:translateX(0)} 14%{transform:translateX(-13px)} 28%{transform:translateX(12px)} 42%{transform:translateX(-9px)} 58%{transform:translateX(7px)} 72%{transform:translateX(-4px)} 86%{transform:translateX(2px)} }
+
+  /* unsichtbare Tasten */
+  .key{ position:absolute; border-radius:50%; }
+  .calib .key{ background:rgba(10,132,255,.22); border:1px solid rgba(10,132,255,.85); }
+  .calib .key::after{ content:attr(data-k); position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:18px; color:#fff; }
+  .key.press{ background:rgba(255,255,255,.18); }
+
+  #reveal{ position:absolute; z-index:20; left:50%; top:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,.88); border-radius:18px; padding:18px 22px; min-width:200px; max-width:80%; opacity:0; pointer-events:none; transition:opacity .18s; }
+  #reveal.show{ opacity:1; pointer-events:auto; }
+  #reveal h3{ margin:0 0 10px; font-size:13px; letter-spacing:.5px; opacity:.55; font-weight:600; text-transform:uppercase; }
+  #revealList{ display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow:auto; }
+  .cap{ font-size:26px; font-weight:600; letter-spacing:5px; display:flex; justify-content:space-between; gap:14px; align-items:baseline; }
+  .cap .idx{ font-size:12px; opacity:.45; letter-spacing:0; }
+  .cap.cur{ color:#0a84ff; }
+  #revealEmpty{ font-size:15px; opacity:.5; }
+
+  #hot{ position:absolute; top:0; left:0; width:72px; height:72px; z-index:30; }
+
+  #calibHint{ position:absolute; left:50%; bottom:24px; transform:translateX(-50%); z-index:25; background:rgba(0,0,0,.7); padding:8px 14px; border-radius:20px; font-size:12px; display:none; }
+  .calib #calibHint{ display:block; }
+
+  #settings{ position:absolute; inset:0; z-index:40; background:rgba(8,10,14,.97); display:none; flex-direction:column; padding:50px 20px 28px; overflow:auto; }
+  #settings.show{ display:flex; }
+  #settings h2{ margin:0 0 4px; font-size:20px; }
+  #settings .note{ font-size:12px; opacity:.55; margin:0 0 16px; line-height:1.45; }
+  .row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.08); }
+  .row label{ font-size:14px; }
+  .sub{ font-size:11px; opacity:.5; }
+  .seg{ display:flex; border:1px solid rgba(255,255,255,.25); border-radius:9px; overflow:hidden; }
+  .seg button{ background:transparent; color:#fff; border:0; padding:7px 15px; font-size:14px; cursor:pointer; }
+  .seg button.active{ background:#0a84ff; }
+  .toggle{ width:50px; height:30px; border-radius:15px; background:rgba(255,255,255,.2); position:relative; cursor:pointer; transition:background .2s; flex:none; }
+  .toggle.on{ background:#34c759; }
+  .toggle .knob{ position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%; background:#fff; transition:left .2s; }
+  .toggle.on .knob{ left:23px; }
+  input[type=file]{ color:#fff; font-size:13px; max-width:170px; }
+  .btn{ background:rgba(255,255,255,.1); border:0; color:#fff; padding:10px 14px; border-radius:10px; font-size:14px; cursor:pointer; }
+  #done{ margin-top:22px; background:#0a84ff; padding:14px; border-radius:12px; font-size:16px; border:0; color:#fff; cursor:pointer; }
+</style>
+
+<div id="app">
+  <div id="bg"></div>
+  <div id="placeholder">Tippe lange auf die <b>obere linke Ecke</b> (~1,2&nbsp;s),<br>um deinen Screenshot zu laden und zu kalibrieren.</div>
+  <div id="stage">
+    <div class="group" id="dotsGroup"><div class="frame" id="dotsFrame" data-label="PUNKTE"></div></div>
+    <div class="group" id="keysGroup"><div class="frame" id="keysFrame" data-label="TASTEN"></div></div>
+  </div>
+
+  <div id="calibHint">1 Finger ziehen = verschieben&nbsp;·&nbsp;2 Finger = zoomen</div>
+
+  <div id="reveal">
+    <h3>Getippte Folgen</h3>
+    <div id="revealList"></div>
+    <div id="revealEmpty">Noch nichts eingegeben.</div>
+  </div>
+
+  <div id="hot"></div>
+
+  <div id="settings">
+    <h2>Einstellungen</h2>
+    <p class="note">Nur du siehst das hier. Eingaben bleiben im Arbeitsspeicher (kein Speichern/Senden). Zuschauer bitte vorab bitten, keine echte PIN zu tippen.</p>
+
+    <div class="row"><label>Sperrbildschirm-Screenshot</label><input type="file" id="bgFile" accept="image/*"></div>
+    <div class="row"><label>Code-Länge</label>
+      <div class="seg" id="lenSeg"><button data-len="4" class="active">4</button><button data-len="6">6</button></div>
+    </div>
+    <div class="row"><label>Kalibrieren<br><span class="sub">Tasten & Punkte ziehen/zoomen</span></label><div class="toggle" id="tCalib"><div class="knob"></div></div></div>
+    <div class="row"><label>Rütteln bei voller Eingabe</label><div class="toggle on" id="tShake"><div class="knob"></div></div></div>
+    <div class="row"><label>Tipp-Sound</label><div class="toggle on" id="tSound"><div class="knob"></div></div></div>
+    <div class="row"><label>Eigene Sound-Datei<br><span class="sub">z.B. echter Apple-Ton</span></label><input type="file" id="sndFile" accept="audio/*"></div>
+    <div class="row"><label>Vibration</label><div class="toggle on" id="tHaptic"><div class="knob"></div></div></div>
+    <div class="row"><label>Position zurücksetzen</label><button class="btn" id="resetPos">Standard</button></div>
+    <div class="row"><label>Liste leeren</label><button class="btn" id="clearBtn">Eingaben löschen</button></div>
+
+    <button id="done">Fertig</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const $=s=>document.querySelector(s);
+
+  const cfg={ len:4, sound:true, haptic:true, calib:false, shake:true };
+  const state={ entered:"", captures:[], committed:false };
+
+  const app=$("#app"), bg=$("#bg"), placeholder=$("#placeholder");
+  const dotsGroup=$("#dotsGroup"), dotsFrame=$("#dotsFrame");
+  const keysGroup=$("#keysGroup"), keysFrame=$("#keysFrame");
+
+  // Transform-Zustand der beiden Gruppen
+  const DEF_DOTS={tx:0,ty:0,scale:1}, DEF_KEYS={tx:0,ty:0,scale:1};
+  const tDots={...DEF_DOTS}, tKeys={...DEF_KEYS};
+  dotsGroup.style.left="50%"; dotsGroup.style.top="30%";
+  keysGroup.style.left="50%"; keysGroup.style.top="62%";
+  function renderT(g,t){ g.style.transform=`translate(calc(-50% + ${t.tx}px), calc(-50% + ${t.ty}px)) scale(${t.scale})`; }
+  renderT(dotsGroup,tDots); renderT(keysGroup,tKeys);
+
+  // ---------- Sound ----------
+  let actx=null, customSnd=null;
+  function ctx(){ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); return actx; }
+  function clickSound(){
+    if(!cfg.sound) return;
+    if(customSnd){ try{ const a=customSnd.cloneNode(); a.currentTime=0; a.play(); }catch(e){} return; }
+    try{
+      const c=ctx(), t=c.currentTime;
+      const N=Math.floor(c.sampleRate*0.03), buf=c.createBuffer(1,N,c.sampleRate), d=buf.getChannelData(0);
+      for(let i=0;i<N;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/N,3);
+      const noise=c.createBufferSource(); noise.buffer=buf;
+      const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=1800; bp.Q.value=0.9;
+      const ng=c.createGain(); ng.gain.value=0.5;
+      noise.connect(bp).connect(ng).connect(c.destination);
+      const o=c.createOscillator(), g=c.createGain();
+      o.type="triangle"; o.frequency.setValueAtTime(620,t); o.frequency.exponentialRampToValueAtTime(180,t+0.04);
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.3,t+0.003); g.gain.exponentialRampToValueAtTime(0.0001,t+0.05);
+      o.connect(g).connect(c.destination);
+      noise.start(t); noise.stop(t+0.03); o.start(t); o.stop(t+0.06);
+    }catch(e){}
+  }
+  function haptic(ms){ if(cfg.haptic && navigator.vibrate) navigator.vibrate(ms||8); }
+
+  // ---------- Punkte & Tasten aufbauen ----------
+  let dotEls=[], keyEls=[];
+  function buildDots(){
+    dotsFrame.innerHTML=""; dotEls=[];
+    for(let i=0;i<cfg.len;i++){ const el=document.createElement("div"); el.className="dot"; dotsFrame.appendChild(el); dotEls.push(el); }
+    renderDots();
+  }
+  function buildKeys(){
+    keysFrame.innerHTML=""; keyEls=[];
+    const D=70, colGap=92, rowGap=86;           // lokale Maße (per Zoom skalierbar)
+    keysFrame.style.width=(2*colGap+D)+"px";
+    keysFrame.style.height=(3*rowGap+D)+"px";
+    const layout=[["1","2","3"],["4","5","6"],["7","8","9"],["","0","del"]];
+    layout.forEach((row,r)=> row.forEach((k,c)=>{
+      if(k==="") return;
+      const el=document.createElement("div"); el.className="key"; el.dataset.k=k;
+      el.style.width=el.style.height=D+"px";
+      el.style.left=(c*colGap)+"px"; el.style.top=(r*rowGap)+"px";
+      keysFrame.appendChild(el); keyEls.push(el);
+    }));
+  }
+  function renderDots(){ dotEls.forEach((el,i)=> el.classList.toggle("filled", i<state.entered.length)); }
+
+  // ---------- Eingabe ----------
+  function input(d){
+    if(state.entered.length>=cfg.len) return;
+    state.entered+=d; state.committed=false;
+    clickSound(); haptic(8); renderDots();
+    const el=dotEls[state.entered.length-1];
+    if(el){ el.classList.add("pop"); setTimeout(()=>el.classList.remove("pop"),120); }
+    if(state.entered.length>=cfg.len) setTimeout(finishEntry, 200);
+  }
+  function del(){ if(state.entered){ state.entered=state.entered.slice(0,-1); haptic(6); renderDots(); } }
+  function finishEntry(){
+    if(!state.entered || state.committed) return;
+    state.captures.push(state.entered); state.committed=true;
+    if(cfg.shake){
+      haptic(40); dotsFrame.classList.add("shake");
+      setTimeout(()=>{ dotsFrame.classList.remove("shake"); state.entered=""; renderDots(); }, 460);
+    }else{
+      setTimeout(()=>{ state.entered=""; renderDots(); }, 250);
+    }
+  }
+  function keyAt(x,y){
+    for(const el of keyEls){ const r=el.getBoundingClientRect(); const cx=r.left+r.width/2, cy=r.top+r.height/2;
+      if(Math.hypot(x-cx,y-cy)<=r.width/2) return el; }
+    return null;
+  }
+
+  // ---------- Direkt ziehen/zoomen (Kalibrierung) ----------
+  function makeManip(group,frame,t){
+    const pts=new Map(); let base=null;
+    function centroid(){ const a=[...pts.values()]; return { x:a.reduce((s,p)=>s+p.x,0)/a.length, y:a.reduce((s,p)=>s+p.y,0)/a.length, n:a.length,
+      d:a.length>=2?Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y):0 }; }
+    function snap(){ const c=centroid(); base={tx:t.tx,ty:t.ty,scale:t.scale,cx:c.x,cy:c.y,d:c.d}; }
+    function apply(){ if(!base||pts.size===0) return; const c=centroid();
+      t.tx=base.tx+(c.x-base.cx); t.ty=base.ty+(c.y-base.cy);
+      if(c.n>=2 && base.d>0) t.scale=Math.max(.3,Math.min(3, base.scale*(c.d/base.d)));
+      renderT(group,t); }
+    frame.addEventListener("pointerdown",e=>{ if(!cfg.calib) return; e.preventDefault(); clearTimers();
+      try{frame.setPointerCapture(e.pointerId);}catch(x){} pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); snap(); });
+    frame.addEventListener("pointermove",e=>{ if(!pts.has(e.pointerId)) return; pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); apply(); });
+    function up(e){ if(pts.has(e.pointerId)){ pts.delete(e.pointerId); pts.size?snap():(base=null); } }
+    frame.addEventListener("pointerup",up); frame.addEventListener("pointercancel",up);
+  }
+  makeManip(dotsGroup,dotsFrame,tDots);
+  makeManip(keysGroup,keysFrame,tKeys);
+
+  // ---------- Globales Tippen / Reveal / Settings ----------
+  const HOT=72, LONG=600;
+  let downX=0,downY=0,longTimer=null,longFired=false,moved=false,inHot=false;
+  function clearTimers(){ clearTimeout(longTimer); }
+  app.addEventListener("pointerdown",e=>{
+    if($("#settings").classList.contains("show")) return;
+    downX=e.clientX; downY=e.clientY; moved=false; longFired=false;
+    inHot=(downX<HOT && downY<HOT);
+    clearTimers();
+    if(inHot){ longTimer=setTimeout(openSettings,1200); }
+    else if(!cfg.calib){ longTimer=setTimeout(()=>{ longFired=true; showReveal(); }, LONG); }
+  });
+  app.addEventListener("pointermove",e=>{ if(Math.hypot(e.clientX-downX,e.clientY-downY)>12){ moved=true; clearTimers(); } });
+  app.addEventListener("pointerup",e=>{
+    clearTimers();
+    if($("#settings").classList.contains("show")||cfg.calib||inHot||moved||longFired) return;
+    const k=keyAt(downX,downY);
+    if(k){ k.classList.add("press"); setTimeout(()=>k.classList.remove("press"),120);
+      k.dataset.k==="del" ? del() : input(k.dataset.k); }
+  });
+
+  // ---------- Reveal ----------
+  let revealTimer=null;
+  function showReveal(){
+    haptic(15);
+    const list=$("#revealList"), empty=$("#revealEmpty"); list.innerHTML="";
+    const all=[...state.captures]; if(state.entered) all.push(state.entered);
+    if(!all.length){ empty.style.display="block"; }
+    else{ empty.style.display="none";
+      all.forEach((code,i)=>{ const isCur=state.entered && i===all.length-1 && !state.committed;
+        const div=document.createElement("div"); div.className="cap"+(isCur?" cur":"");
+        div.innerHTML='<span class="idx">'+(i+1)+'</span><span>'+code+'</span>';
+        list.appendChild(div); });
+    }
+    $("#reveal").classList.add("show");
+    clearTimeout(revealTimer); revealTimer=setTimeout(()=>$("#reveal").classList.remove("show"),6000);
+  }
+  $("#reveal").addEventListener("pointerdown",e=>{ e.stopPropagation(); $("#reveal").classList.remove("show"); });
+
+  // ---------- Einstellungen ----------
+  const settings=$("#settings");
+  function openSettings(){ settings.classList.add("show"); }
+  $("#done").addEventListener("click",()=>settings.classList.remove("show"));
+
+  $("#lenSeg").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return;
+    document.querySelectorAll("#lenSeg button").forEach(x=>x.classList.remove("active")); b.classList.add("active");
+    cfg.len=+b.dataset.len; state.entered=""; buildDots(); });
+
+  function bindToggle(id,key,after){ const el=$(id);
+    el.addEventListener("click",()=>{ cfg[key]=!cfg[key]; el.classList.toggle("on",cfg[key]);
+      app.classList.toggle("calib",cfg.calib); if(after) after(); }); }
+  bindToggle("#tCalib","calib");
+  bindToggle("#tShake","shake");
+  bindToggle("#tSound","sound");
+  bindToggle("#tHaptic","haptic");
+
+  $("#bgFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f) return;
+    const r=new FileReader(); r.onload=ev=>{ bg.style.backgroundImage="url("+ev.target.result+")"; placeholder.style.display="none"; };
+    r.readAsDataURL(f); });
+  $("#sndFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f) return;
+    customSnd=new Audio(URL.createObjectURL(f)); customSnd.preload="auto"; });
+
+  $("#resetPos").addEventListener("click",()=>{ Object.assign(tDots,DEF_DOTS); Object.assign(tKeys,DEF_KEYS);
+    renderT(dotsGroup,tDots); renderT(keysGroup,tKeys); });
+  $("#clearBtn").addEventListener("click",()=>{ state.captures=[]; state.entered=""; state.committed=false;
+    renderDots(); $("#reveal").classList.remove("show"); settings.classList.remove("show"); });
+
+  document.addEventListener("pointerdown",function w(){ try{ const c=ctx(); if(c.state==="suspended") c.resume(); }catch(e){} document.removeEventListener("pointerdown",w); },{once:true});
+
+  buildDots(); buildKeys();
+})();
+</script>
