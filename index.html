@@ -110,7 +110,7 @@
   #homeDots span{ width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.45); box-shadow:0 0 2px rgba(0,0,0,.4); }
   #homeDots span.active{ background:#fff; }
   #bg.unlocking{ filter:blur(18px) brightness(.7); transform:scale(1.06); transition:filter .45s ease, transform .45s ease; }
-  #armDot{ position:absolute; left:8px; bottom:8px; width:7px; height:7px; border-radius:50%; background:#34c759; opacity:0; z-index:46; pointer-events:none; transition:opacity .15s; }
+  #armDot{ position:absolute; left:5px; top:5px; width:4px; height:4px; border-radius:50%; background:#34c759; opacity:0; z-index:46; pointer-events:none; transition:opacity .15s; }
 </style>
 
 <div id="app">
@@ -566,6 +566,10 @@
   setAppHeight();
   window.addEventListener("resize", setAppHeight);
   window.addEventListener("orientationchange", ()=> setTimeout(setAppHeight,250));
+  window.addEventListener("load", setAppHeight);
+  window.addEventListener("pageshow", setAppHeight);
+  setTimeout(setAppHeight, 300);
+  setTimeout(setAppHeight, 900);
 
   // ---------- Start: gespeichertes Setup laden, dann aufbauen ----------
   loadSetup();
