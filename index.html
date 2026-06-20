@@ -21,12 +21,14 @@
 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
 <style>
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html,body{ margin:0; height:100%; overflow:hidden; background:#000; }
+  html,body{ margin:0; height:100%; height:100dvh; overflow:hidden; background:#000; }
   body{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:#fff; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
-  #app{ position:fixed; inset:0; overflow:hidden; touch-action:none; }
+  #app{ position:fixed; inset:0; height:100dvh; overflow:hidden; touch-action:none; }
 
   #bg{ position:absolute; inset:0; background-color:#000; background-size:cover; background-repeat:no-repeat; background-position:center; z-index:0; }
   #placeholder{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:30px; z-index:1; color:#888; font-size:15px; line-height:1.5; }
@@ -553,6 +555,17 @@
       for(let i=0;i<4;i++){ const ic=document.createElement("div"); ic.className="ic"; d.appendChild(ic); }
     });
   })();
+
+  // ---------- Vollbild: App-Höhe exakt auf die sichtbare Bildschirmhöhe setzen ----------
+  function setAppHeight(){
+    const h=window.innerHeight;
+    document.documentElement.style.height=h+"px";
+    document.body.style.height=h+"px";
+    app.style.height=h+"px";
+  }
+  setAppHeight();
+  window.addEventListener("resize", setAppHeight);
+  window.addEventListener("orientationchange", ()=> setTimeout(setAppHeight,250));
 
   // ---------- Start: gespeichertes Setup laden, dann aufbauen ----------
   loadSetup();
