@@ -24,6 +24,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#000000">
+<title>Backdoor</title>
+<link rel="apple-touch-icon" href="backdoor-icon.png">
 <style>
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; height:100dvh; overflow:hidden; background:#000; }
@@ -115,7 +117,7 @@
 
 <div id="app">
   <div id="bg"></div>
-  <div id="placeholder">Tippe lange auf die <b>obere linke Ecke</b> (~1,2&nbsp;s),<br>um deinen Screenshot zu laden und zu kalibrieren.</div>
+  <div id="placeholder">Mit drei Fingern tippen,<br>um das Menü zu öffnen.</div>
   <div id="stage">
     <div class="group" id="dotsGroup"><div class="frame" id="dotsFrame" data-label="PUNKTE"></div></div>
     <div class="group" id="keysGroup"><div class="frame" id="keysFrame" data-label="TASTEN"></div></div>
@@ -151,7 +153,6 @@
 
   <div id="settings">
     <h2>Einstellungen</h2>
-    <p class="note">Nur du siehst das hier. Eingaben bleiben im Arbeitsspeicher (kein Speichern/Senden). Zuschauer bitte vorab bitten, keine echte PIN zu tippen.</p>
 
     <div class="row"><label>Sperrbildschirm-Screenshot</label><input type="file" id="bgFile" accept="image/*"></div>
     <div class="row"><label>Code-Länge</label>
@@ -165,16 +166,9 @@
 
     <div class="row"><label>Home-Screenshot<br><span class="sub">erscheint beim Entsperren (Seite 1)</span></label><input type="file" id="homeFile" accept="image/*"></div>
     <div class="row"><label>Home-Screenshot Seite 2<br><span class="sub">optional, zum Hinwischen</span></label><input type="file" id="homeFile2" accept="image/*"></div>
-    <div class="row"><label>Home senkrecht</label><input type="range" id="homeY" min="0" max="100" value="50" style="width:150px"></div>
-    <div class="row"><label>Home Zoom</label><input type="range" id="homeZoom" min="100" max="200" value="100" style="width:150px"></div>
-    <div class="row"><label>Fake-Home zeigen<br><span class="sub">aus = nur Animation, du wischst selbst raus</span></label><div class="toggle on" id="tFakeHome"><div class="knob"></div></div></div>
-    <div class="row"><label>Fester Entsperr-Code<br><span class="sub">leer = nur per 2-Finger-Tipp</span></label><input class="num" id="unlockCode" inputmode="numeric" style="width:90px" placeholder="—"></div>
-    <div class="row"><label>Arm-Anzeige<br><span class="sub">winziger Punkt unten links</span></label><div class="toggle on" id="tArmInd"><div class="knob"></div></div></div>
-    <div class="row"><label>Zurück sperren</label><button class="btn" id="relockBtn">Sperrbildschirm</button></div>
-
-    <div class="row"><label>Position zurücksetzen</label><button class="btn" id="resetPos">Standard</button></div>
-    <div class="row"><label>Gespeichertes Setup löschen</label><button class="btn" id="forgetBtn">Löschen</button></div>
-    <div class="row"><label>Liste leeren</label><button class="btn" id="clearBtn">Eingaben löschen</button></div>
+    <div class="row"><label>Fake-Home zeigen</label><div class="toggle on" id="tFakeHome"><div class="knob"></div></div></div>
+    <div class="row"><label>Fester Entsperr-Code</label><input class="num" id="unlockCode" inputmode="numeric" style="width:90px" placeholder="—"></div>
+    <div class="row"><label>Arm-Anzeige<br><span class="sub">grüner Punkt oben links</span></label><div class="toggle on" id="tArmInd"><div class="knob"></div></div></div>
 
     <button id="done">Fertig</button>
   </div>
@@ -185,7 +179,7 @@
   "use strict";
   const $=s=>document.querySelector(s);
 
-  const cfg={ len:4, calib:false, shake:true, lockEnabled:true, lockAfter:5, lockSeconds:60, keepAwake:true, unlockCode:"", armIndicator:true, showFakeHome:true, homePosY:50, homeZoom:100 };
+  const cfg={ len:4, calib:false, shake:true, lockEnabled:true, lockAfter:5, lockSeconds:60, keepAwake:true, unlockCode:"", armIndicator:true, showFakeHome:true };
   const state={ entered:"", captures:[], committed:false, fails:0, locked:false, lockTimer:null, armed:false, unlocked:false, homePage:0 };
 
   const app=$("#app"), bg=$("#bg"), placeholder=$("#placeholder");
@@ -288,13 +282,11 @@
     $("#home").classList.remove("show"); bg.classList.remove("unlocking");
     state.entered=""; renderDots();
   }
-  // ---------- Fake-Homescreen: Bilder, Position, Seiten ----------
-  function styleHomeImg(img){ img.style.objectPosition="50% "+cfg.homePosY+"%"; img.style.transform="scale("+(cfg.homeZoom/100)+")"; img.style.transformOrigin="center"; }
+  // ---------- Fake-Homescreen: Bilder, Seiten ----------
   function applyHome(){
     const i1=$("#homeImg1"), i2=$("#homeImg2"), p1=$("#hp1"), p2=$("#hp2");
     if(homeData){ i1.src=homeData; p1.classList.add("hasimg"); } else { i1.removeAttribute("src"); p1.classList.remove("hasimg"); }
     if(homeData2){ i2.src=homeData2; p2.classList.add("hasimg"); } else { i2.removeAttribute("src"); p2.classList.remove("hasimg"); }
-    styleHomeImg(i1); styleHomeImg(i2);
   }
   function updateDots(){ const d=$("#homeDots").children; for(let i=0;i<d.length;i++) d[i].classList.toggle("active", i===state.homePage); }
   function setPage(p, instant){
@@ -442,7 +434,6 @@
         len:cfg.len, shake:cfg.shake,
         lockEnabled:cfg.lockEnabled, lockAfter:cfg.lockAfter, lockSeconds:cfg.lockSeconds, keepAwake:cfg.keepAwake,
         unlockCode:cfg.unlockCode, armIndicator:cfg.armIndicator, showFakeHome:cfg.showFakeHome,
-        homePosY:cfg.homePosY, homeZoom:cfg.homeZoom,
         tDots, tKeys, tDel, bg:bgData, home:homeData, home2:homeData2
       }));
     }catch(e){
@@ -460,8 +451,6 @@
     if(typeof d.unlockCode==="string") cfg.unlockCode=d.unlockCode;
     if(typeof d.armIndicator==="boolean") cfg.armIndicator=d.armIndicator;
     if(typeof d.showFakeHome==="boolean") cfg.showFakeHome=d.showFakeHome;
-    if(typeof d.homePosY==="number") cfg.homePosY=d.homePosY;
-    if(typeof d.homeZoom==="number") cfg.homeZoom=d.homeZoom;
     if(d.tDots) Object.assign(tDots,d.tDots);
     if(d.tKeys) Object.assign(tKeys,d.tKeys);
     if(d.tDel)  Object.assign(tDel,d.tDel);
@@ -479,7 +468,6 @@
     $("#unlockCode").value=cfg.unlockCode||"";
     $("#tArmInd").classList.toggle("on",cfg.armIndicator);
     $("#tFakeHome").classList.toggle("on",cfg.showFakeHome);
-    $("#homeY").value=cfg.homePosY; $("#homeZoom").value=cfg.homeZoom;
     updateArmIndicator();
     $("#tCalib").classList.remove("on"); cfg.calib=false; app.classList.remove("calib");
   }
@@ -522,16 +510,6 @@
   $("#bgFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) setScreenshot(f); });
   $("#homeFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) downscaleFile(f, url=>{ homeData=url; applyHome(); saveSetup(); }); });
   $("#homeFile2").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) downscaleFile(f, url=>{ homeData2=url; applyHome(); saveSetup(); }); });
-  $("#homeY").addEventListener("input",e=>{ cfg.homePosY=+e.target.value; applyHome(); saveSetup(); });
-  $("#homeZoom").addEventListener("input",e=>{ cfg.homeZoom=+e.target.value; applyHome(); saveSetup(); });
-  $("#relockBtn").addEventListener("click",()=>{ relock(); settings.classList.remove("show"); });
-
-  $("#resetPos").addEventListener("click",()=>{ Object.assign(tDots,DEF_DOTS); Object.assign(tKeys,DEF_KEYS); Object.assign(tDel,DEF_DEL);
-    renderAllT(); saveSetup(); });
-  $("#forgetBtn").addEventListener("click",()=>{ try{ localStorage.removeItem(LS_KEY); }catch(e){}
-    settings.classList.remove("show"); });
-  $("#clearBtn").addEventListener("click",()=>{ state.captures=[]; state.entered=""; state.committed=false; state.fails=0;
-    renderDots(); $("#reveal").classList.remove("show"); settings.classList.remove("show"); });
 
   // ---------- Bildschirm wachhalten (Wake Lock; iOS Safari 16.4+) ----------
   let wakeLock=null;
